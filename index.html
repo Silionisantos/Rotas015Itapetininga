@@ -1,0 +1,962 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="h-full bg-slate-900 text-slate-100">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rotas zero15 - Sistema Integrado de Mobilidade para Ciclistas</title>
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f0fdf4',
+                            100: '#dcfce7',
+                            500: '#22c55e',
+                            600: '#16a34a',
+                            700: '#15803d',
+                            800: '#166534',
+                            900: '#14532d',
+                        },
+                        darkcard: '#1e293b'
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Leaflet CSS & JS for Maps -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+
+    <!-- Google Fonts Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .leaflet-container { width: 100%; height: 100%; z-index: 10; background: #0f172a; }
+        /* Custom map dark tiles filter */
+        .dark-tiles .leaflet-tile-container img {
+            filter: brightness(0.7) invert(1) contrast(1.2) hue-rotate(200deg) saturate(0.3);
+        }
+        /* Custom scrollbar */
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: #0f172a; }
+        ::-webkit-scrollbar-thumb { background: #334155; border-radius: 4px; }
+        ::-webkit-scrollbar-thumb:hover { background: #475569; }
+    </style>
+</head>
+<body class="h-full flex flex-col overflow-hidden bg-slate-950">
+
+    <!-- TOP NAVBAR -->
+    <header class="bg-slate-900 border-b border-slate-800 px-4 py-3 flex items-center justify-between shrink-0 shadow-lg z-20">
+        <div class="flex items-center space-x-3">
+            <div class="bg-gradient-to-tr from-brand-600 to-emerald-400 p-2.5 rounded-xl text-slate-950 font-black shadow-lg shadow-brand-500/20">
+                <i class="fa-solid fa-person-biking text-xl"></i>
+            </div>
+            <div>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-xl font-black tracking-tight text-white">Rotas <span class="text-brand-500">zero15</span></h1>
+                    <span class="bg-brand-500/10 text-brand-400 text-xs px-2 py-0.5 rounded-full font-semibold border border-brand-500/30">Itapetininga & Região</span>
+                </div>
+                <p class="text-xs text-slate-400 hidden sm:block">Fatec Itapetininga - Projeto Integrador I (ADS)</p>
+            </div>
+        </div>
+
+        <!-- System Role Selector & Main Tabs -->
+        <div class="flex items-center space-x-2 sm:space-x-4">
+            <!-- Navigation View Switcher -->
+            <nav class="hidden md:flex bg-slate-950 p-1 rounded-xl border border-slate-800 text-sm font-medium">
+                <button onclick="switchTab('planner')" id="nav-planner" class="px-3 py-1.5 rounded-lg text-brand-400 bg-slate-800 font-semibold transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-route"></i> Planos de Rota
+                </button>
+                <button onclick="switchTab('incidents')" id="nav-incidents" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Ocorrências
+                </button>
+                <button onclick="switchTab('reviews')" id="nav-reviews" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-star"></i> Avaliações
+                </button>
+                <button onclick="switchTab('admin')" id="nav-admin" class="px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition-all flex items-center gap-2">
+                    <i class="fa-solid fa-user-shield"></i> Painel Admin
+                </button>
+            </nav>
+
+            <!-- Role Toggle Indicator -->
+            <div class="flex items-center bg-slate-950 border border-slate-800 rounded-xl p-1">
+                <button id="role-ciclista" onclick="setRole('ciclista')" class="px-3 py-1 text-xs font-bold rounded-lg bg-brand-600 text-slate-950 shadow">
+                    <i class="fa-solid fa-user text-xs mr-1"></i> Ciclista
+                </button>
+                <button id="role-admin" onclick="setRole('admin')" class="px-3 py-1 text-xs font-bold rounded-lg text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-lock text-xs mr-1"></i> Admin
+                </button>
+            </div>
+
+            <!-- Fatec Info Trigger -->
+            <button onclick="openModal('modal-info')" class="text-slate-400 hover:text-white p-2 rounded-xl border border-slate-800 hover:bg-slate-800 transition" title="Sobre o Projeto Fatec">
+                <i class="fa-solid fa-graduation-cap text-lg"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Mobile Navigation Sub-bar -->
+    <div class="md:hidden bg-slate-900 border-b border-slate-800 px-2 py-1.5 flex justify-around text-xs font-medium z-20">
+        <button onclick="switchTab('planner')" class="nav-mobile-btn text-brand-400 flex flex-col items-center gap-1 p-1" id="mob-planner">
+            <i class="fa-solid fa-route text-base"></i> Rotas
+        </button>
+        <button onclick="switchTab('incidents')" class="nav-mobile-btn text-slate-400 flex flex-col items-center gap-1 p-1" id="mob-incidents">
+            <i class="fa-solid fa-triangle-exclamation text-base"></i> Alertar
+        </button>
+        <button onclick="switchTab('reviews')" class="nav-mobile-btn text-slate-400 flex flex-col items-center gap-1 p-1" id="mob-reviews">
+            <i class="fa-solid fa-star text-base"></i> Avaliar
+        </button>
+        <button onclick="switchTab('admin')" class="nav-mobile-btn text-slate-400 flex flex-col items-center gap-1 p-1" id="mob-admin">
+            <i class="fa-solid fa-user-shield text-base"></i> Admin
+        </button>
+    </div>
+
+    <!-- MAIN WORKSPACE -->
+    <main class="flex-1 flex flex-col lg:flex-row relative overflow-hidden">
+        
+        <!-- SIDEBAR CONTAINER (Dynamic Views) -->
+        <aside id="sidebar" class="w-full lg:w-[420px] bg-slate-900 border-r border-slate-800 flex flex-col overflow-y-auto shrink-0 z-20 shadow-2xl h-1/2 lg:h-full">
+            
+            <!-- VIEW 1: ROUTE PLANNER (Ciclista - Req #2, #3, #4, #5) -->
+            <section id="view-planner" class="p-4 space-y-4">
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800 shadow-inner">
+                    <div class="flex items-center justify-between mb-3">
+                        <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                            <i class="fa-solid fa-compass text-brand-500"></i> Planejador de Trajeto
+                        </h2>
+                        <span class="text-[10px] bg-brand-500/20 text-brand-400 font-bold px-2 py-0.5 rounded-full">Itapetininga</span>
+                    </div>
+
+                    <!-- Origin & Destination Inputs with presets -->
+                    <div class="space-y-3">
+                        <div class="relative">
+                            <label class="text-xs font-semibold text-slate-400 block mb-1">Ponto de Origem</label>
+                            <div class="relative">
+                                <i class="fa-solid fa-circle-dot text-emerald-400 absolute left-3 top-3 text-sm"></i>
+                                <select id="select-origin" onchange="calculateRoutes()" class="w-full bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-xl pl-9 pr-3 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                                    <option value="fatec">Fatec Itapetininga (Jd. Itália)</option>
+                                    <option value="centro">Praça Marechal Deodoro (Centro)</option>
+                                    <option value="chapadinha">Parque Ecológico Chapadinha</option>
+                                    <option value="marginal">Av. Marginal Chá Preta</option>
+                                    <option value="shopping">Shopping Itapetininga</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <div class="relative">
+                            <label class="text-xs font-semibold text-slate-400 block mb-1">Ponto de Destino</label>
+                            <div class="relative">
+                                <i class="fa-solid fa-location-dot text-rose-500 absolute left-3 top-3 text-sm"></i>
+                                <select id="select-destination" onchange="calculateRoutes()" class="w-full bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-xl pl-9 pr-3 py-2.5 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 outline-none">
+                                    <option value="chapadinha">Parque Ecológico Chapadinha</option>
+                                    <option value="fatec">Fatec Itapetininga (Jd. Itália)</option>
+                                    <option value="centro">Praça Marechal Deodoro (Centro)</option>
+                                    <option value="marginal">Av. Marginal Chá Preta</option>
+                                    <option value="shopping">Shopping Itapetininga</option>
+                                </select>
+                            </div>
+                        </div>
+
+                        <!-- Search / Recalculate Button -->
+                        <button onclick="calculateRoutes()" class="w-full bg-gradient-to-r from-brand-600 to-emerald-500 hover:from-brand-500 hover:to-emerald-400 text-slate-950 font-bold py-2.5 px-4 rounded-xl shadow-lg transition flex items-center justify-center gap-2">
+                            <i class="fa-solid fa-magnifying-glass"></i> Buscar Melhores Rotas
+                        </button>
+                    </div>
+                </div>
+
+                <!-- POI Layer Toggles -->
+                <div class="bg-slate-950/60 p-3 rounded-2xl border border-slate-800">
+                    <span class="text-xs font-bold text-slate-400 block mb-2 uppercase tracking-wider">Camadas no Mapa (POIs):</span>
+                    <div class="grid grid-cols-2 gap-2 text-xs">
+                        <label class="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-slate-800 cursor-pointer hover:bg-slate-800/80">
+                            <input type="checkbox" id="layer-ciclovias" checked onchange="toggleLayers()" class="accent-brand-500 rounded">
+                            <span class="text-emerald-400 font-medium"><i class="fa-solid fa-road text-xs"></i> Ciclovias</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-slate-800 cursor-pointer hover:bg-slate-800/80">
+                            <input type="checkbox" id="layer-oficinas" checked onchange="toggleLayers()" class="accent-brand-500 rounded">
+                            <span class="text-sky-400 font-medium"><i class="fa-solid fa-wrench text-xs"></i> Oficinas & Água</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-slate-800 cursor-pointer hover:bg-slate-800/80">
+                            <input type="checkbox" id="layer-alertas" checked onchange="toggleLayers()" class="accent-brand-500 rounded">
+                            <span class="text-amber-400 font-medium"><i class="fa-solid fa-triangle-exclamation text-xs"></i> Alertas Riscos</span>
+                        </label>
+                        <label class="flex items-center gap-2 bg-slate-900 p-2 rounded-xl border border-slate-800 cursor-pointer hover:bg-slate-800/80">
+                            <input type="checkbox" id="layer-estacoes" checked onchange="toggleLayers()" class="accent-brand-500 rounded">
+                            <span class="text-purple-400 font-medium"><i class="fa-solid fa-parking text-xs"></i> Bicicletários</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- ROUTE COMPARISON CARDS (Req #4) -->
+                <div>
+                    <div class="flex items-center justify-between mb-2">
+                        <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider">Comparativo de Rotas Sugeridas</h3>
+                        <span id="route-count-badge" class="text-[11px] text-slate-400">3 opções disponíveis</span>
+                    </div>
+
+                    <div id="route-cards-container" class="space-y-3">
+                        <!-- Dynamic Route Cards Injected Here by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW 2: INCIDENT REPORTING (Ciclista - Req #6) -->
+            <section id="view-incidents" class="p-4 space-y-4 hidden">
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                    <h2 class="text-base font-bold text-white mb-1 flex items-center gap-2">
+                        <i class="fa-solid fa-triangle-exclamation text-amber-400"></i> Registrar Situação de Risco
+                    </h2>
+                    <p class="text-xs text-slate-400 mb-4">Colabore com a comunidade ciclista de Itapetininga informando buracos, falta de iluminação ou vias perigosas.</p>
+
+                    <form id="incident-form" onsubmit="submitIncident(event)" class="space-y-3">
+                        <div>
+                            <label class="text-xs font-semibold text-slate-300 block mb-1">Tipo de Ocorrência</label>
+                            <select id="inc-type" required class="w-full bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-xl px-3 py-2 focus:border-amber-500 outline-none">
+                                <option value="buraco">⚠️ Buraco / Via Danificada</option>
+                                <option value="iluminacao">💡 Iluminação Deficiente</option>
+                                <option value="trafego">🚗 Tráfego Veicular Perigoso</option>
+                                <option value="obra">🚧 Obra Bloqueando Ciclofaixa</option>
+                                <option value="assalto">🛑 Ponto Recorrente de Assaltos</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="text-xs font-semibold text-slate-300 block mb-1">Localização Aproximada</label>
+                            <select id="inc-location" required class="w-full bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-xl px-3 py-2 focus:border-amber-500 outline-none">
+                                <option value="av-marginal">Av. Marginal Chá Preta (Próximo à Ponte)</option>
+                                <option value="centro-praca">Rua Monsenhor Soares - Centro</option>
+                                <option value="vicinal-chapadinha">Estrada Vicinal Parque Chapadinha</option>
+                                <option value="jd-italia">Avenida do Jardim Itália (Acesso Fatec)</option>
+                                <option value="rodo-sp127">Cruzamento Sp-127 com Entrada da Cidade</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="text-xs font-semibold text-slate-300 block mb-1">Nível de Gravidade</label>
+                            <div class="grid grid-cols-3 gap-2">
+                                <label class="bg-slate-900 p-2 rounded-xl border border-slate-800 text-center text-xs text-emerald-400 cursor-pointer hover:bg-slate-800">
+                                    <input type="radio" name="severity" value="Baixo" checked class="hidden peer">
+                                    <span class="block peer-checked:font-bold peer-checked:text-emerald-300">🟢 Baixa</span>
+                                </label>
+                                <label class="bg-slate-900 p-2 rounded-xl border border-slate-800 text-center text-xs text-amber-400 cursor-pointer hover:bg-slate-800">
+                                    <input type="radio" name="severity" value="Médio" class="hidden peer">
+                                    <span class="block peer-checked:font-bold peer-checked:text-amber-300">🟡 Média</span>
+                                </label>
+                                <label class="bg-slate-900 p-2 rounded-xl border border-slate-800 text-center text-xs text-rose-400 cursor-pointer hover:bg-slate-800">
+                                    <input type="radio" name="severity" value="Alto" class="hidden peer">
+                                    <span class="block peer-checked:font-bold peer-checked:text-rose-300">🔴 Alta</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="text-xs font-semibold text-slate-300 block mb-1">Descrição do Problema</label>
+                            <textarea id="inc-description" rows="3" required placeholder="Ex: Buraco profundo na ciclofaixa logo após a curva, risco alto de queda à noite..." class="w-full bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-xl p-3 focus:border-amber-500 outline-none resize-none"></textarea>
+                        </div>
+
+                        <button type="submit" class="w-full bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold py-2.5 rounded-xl shadow-lg transition">
+                            <i class="fa-solid fa-paper-plane mr-1"></i> Publicar Ocorrência no Mapa
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Recent Incidents Feed -->
+                <div>
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Ocorrências Recentes na Região</h3>
+                    <div id="incidents-feed" class="space-y-2">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW 3: REVIEWS & RATINGS (Ciclista - Req #7) -->
+            <section id="view-reviews" class="p-4 space-y-4 hidden">
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                    <h2 class="text-base font-bold text-white mb-1 flex items-center gap-2">
+                        <i class="fa-solid fa-star text-amber-400"></i> Avaliar Rota Utilizada
+                    </h2>
+                    <p class="text-xs text-slate-400 mb-3">Compartilhe sua experiência e dê nota sobre a segurança e conservação do trajeto.</p>
+
+                    <form id="review-form" onsubmit="submitReview(event)" class="space-y-3">
+                        <div>
+                            <label class="text-xs font-semibold text-slate-300 block mb-1">Selecione a Rota</label>
+                            <select id="rev-route" class="w-full bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-xl px-3 py-2 outline-none">
+                                <option value="Rota Ciclovia Central (Fatec - Parque Chapadinha)">Fatec ➔ Parque Chapadinha (Via Ciclovia)</option>
+                                <option value="Rota Expressa Centro">Centro ➔ Shopping Itapetininga</option>
+                                <option value="Circuito Marginal Chá Preta">Circuito Marginal Chá Preta</option>
+                            </select>
+                        </div>
+
+                        <div>
+                            <label class="text-xs font-semibold text-slate-300 block mb-1">Nota da Seguranca (1 a 5 estrelas)</label>
+                            <div class="flex items-center gap-2 text-2xl text-amber-400 cursor-pointer" id="star-rating">
+                                <i class="fa-solid fa-star" onclick="setRating(1)"></i>
+                                <i class="fa-solid fa-star" onclick="setRating(2)"></i>
+                                <i class="fa-solid fa-star" onclick="setRating(3)"></i>
+                                <i class="fa-solid fa-star" onclick="setRating(4)"></i>
+                                <i class="fa-regular fa-star text-slate-600" onclick="setRating(5)"></i>
+                            </div>
+                        </div>
+
+                        <div>
+                            <label class="text-xs font-semibold text-slate-300 block mb-1">Comentário / Dica</label>
+                            <textarea id="rev-comment" rows="2" required placeholder="Ótimo asfalto na ciclovia, bem sinalizada durante o dia..." class="w-full bg-slate-900 border border-slate-700 text-slate-100 text-sm rounded-xl p-3 outline-none resize-none"></textarea>
+                        </div>
+
+                        <button type="submit" class="w-full bg-brand-500 hover:bg-brand-400 text-slate-950 font-bold py-2 rounded-xl transition">
+                            <i class="fa-solid fa-check mr-1"></i> Enviar Avaliação
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Feed of Route Reviews -->
+                <div>
+                    <h3 class="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2">Comentários da Comunidade</h3>
+                    <div id="reviews-feed" class="space-y-2">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+            <!-- VIEW 4: ADMIN DASHBOARD (Administrador - Req #8, #9) -->
+            <section id="view-admin" class="p-4 space-y-4 hidden">
+                <div class="bg-gradient-to-br from-slate-950 to-slate-900 p-4 rounded-2xl border border-brand-500/30">
+                    <div class="flex items-center justify-between mb-3">
+                        <div>
+                            <h2 class="text-base font-bold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-user-shield text-brand-400"></i> Painel Administrativo
+                            </h2>
+                            <p class="text-xs text-slate-400">Gestão de infraestrutura ciclável e moderação de alertas.</p>
+                        </div>
+                        <span class="bg-brand-500/20 text-brand-300 text-[10px] font-bold px-2 py-1 rounded-md border border-brand-500/40">ADMIN</span>
+                    </div>
+
+                    <!-- Quick Metrics -->
+                    <div class="grid grid-cols-3 gap-2 text-center py-2">
+                        <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                            <span class="block text-lg font-black text-emerald-400">14.2 km</span>
+                            <span class="text-[10px] text-slate-400">Ciclovias</span>
+                        </div>
+                        <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                            <span class="block text-lg font-black text-amber-400" id="admin-inc-count">4</span>
+                            <span class="text-[10px] text-slate-400">Ocorrências</span>
+                        </div>
+                        <div class="bg-slate-900/80 p-2 rounded-xl border border-slate-800">
+                            <span class="block text-lg font-black text-sky-400">128</span>
+                            <span class="text-[10px] text-slate-400">Ciclistas</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Admin Action 1: Add/Edit POI or Bike Lane -->
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                    <div class="flex justify-between items-center mb-3">
+                        <h3 class="text-xs font-bold text-white uppercase tracking-wider">
+                            <i class="fa-solid fa-map-pin text-sky-400 mr-1"></i> Cadastrar Novo Ponto de Interesse (POI)
+                        </h3>
+                    </div>
+                    <form id="admin-poi-form" onsubmit="adminAddPOI(event)" class="space-y-2 text-xs">
+                        <input type="text" id="poi-name" placeholder="Nome do Ponto (Ex: Bicicletário Fatec)" required class="w-full bg-slate-900 border border-slate-700 text-slate-100 rounded-xl p-2 outline-none">
+                        <div class="grid grid-cols-2 gap-2">
+                            <select id="poi-category" class="bg-slate-900 border border-slate-700 text-slate-100 rounded-xl p-2 outline-none">
+                                <option value="oficina">🛠️ Oficina / Manutenção</option>
+                                <option value="agua">💧 Ponto de Água Potável</option>
+                                <option value="bicicletario">🚲 Bicicletário Seguro</option>
+                                <option value="ciclovia">🛣️ Nova Ciclofaixa</option>
+                            </select>
+                            <input type="text" id="poi-coords" placeholder="Lat, Lng (Ex: -23.588, -48.049)" required class="bg-slate-900 border border-slate-700 text-slate-100 rounded-xl p-2 outline-none">
+                        </div>
+                        <button type="submit" class="w-full bg-sky-600 hover:bg-sky-500 text-white font-bold py-2 rounded-xl transition">
+                            <i class="fa-solid fa-plus mr-1"></i> Adicionar Ponto ao Sistema
+                        </button>
+                    </form>
+                </div>
+
+                <!-- Admin Action 2: Moderation Table -->
+                <div class="bg-slate-950 p-4 rounded-2xl border border-slate-800">
+                    <h3 class="text-xs font-bold text-white uppercase tracking-wider mb-2">
+                        <i class="fa-solid fa-list-check text-amber-400 mr-1"></i> Moderar Ocorrências Ativas
+                    </h3>
+                    <div class="space-y-2 max-h-56 overflow-y-auto" id="admin-incident-list">
+                        <!-- Populated by JS -->
+                    </div>
+                </div>
+            </section>
+
+        </aside>
+
+        <!-- MAP CONTAINER (Main Interactive View) -->
+        <section class="flex-1 relative h-1/2 lg:h-full w-full">
+            <div id="map" class="dark-tiles"></div>
+
+            <!-- Floating Map Overlay Controls -->
+            <div class="absolute top-4 right-4 z-[400] flex flex-col gap-2">
+                <button onclick="recenterMap()" class="bg-slate-900/90 text-white hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 shadow-xl backdrop-blur transition" title="Centralizar em Itapetininga">
+                    <i class="fa-solid fa-crosshairs text-base"></i>
+                </button>
+                <button onclick="toggleMapStyle()" class="bg-slate-900/90 text-white hover:bg-slate-800 p-2.5 rounded-xl border border-slate-700 shadow-xl backdrop-blur transition" title="Alternar Modo Escuro/Claro do Mapa">
+                    <i class="fa-solid fa-circle-half-stroke text-base"></i>
+                </button>
+            </div>
+
+            <!-- Map Legend Overlay -->
+            <div class="absolute bottom-4 left-4 z-[400] bg-slate-900/95 border border-slate-800 p-3 rounded-2xl shadow-2xl backdrop-blur text-xs hidden sm:block">
+                <span class="font-bold text-slate-300 block mb-1">Legenda Rotas015:</span>
+                <div class="flex items-center gap-3">
+                    <div class="flex items-center gap-1.5"><span class="w-3 h-1 bg-emerald-500 rounded-full"></span> <span class="text-slate-300">Rota Segura (100% Ciclovia)</span></div>
+                    <div class="flex items-center gap-1.5"><span class="w-3 h-1 bg-sky-500 rounded-full"></span> <span class="text-slate-300">Rota Direta</span></div>
+                    <div class="flex items-center gap-1.5"><span class="w-3 h-1 bg-amber-500 rounded-full"></span> <span class="text-slate-300">Panorâmica</span></div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- MODAL: SOBRE O PROJETO FATEC -->
+    <div id="modal-info" class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-[1000] flex items-center justify-center p-4 hidden">
+        <div class="bg-slate-900 border border-slate-800 rounded-3xl max-w-lg w-full p-6 relative shadow-2xl space-y-4">
+            <button onclick="closeModal('modal-info')" class="absolute top-4 right-4 text-slate-400 hover:text-white p-2">
+                <i class="fa-solid fa-xmark text-xl"></i>
+            </button>
+
+            <div class="flex items-center gap-3">
+                <div class="bg-brand-500/20 text-brand-400 p-3 rounded-2xl">
+                    <i class="fa-solid fa-graduation-cap text-2xl"></i>
+                </div>
+                <div>
+                    <h3 class="text-lg font-bold text-white">Projeto Integrador I - Fatec</h3>
+                    <p class="text-xs text-brand-400 font-medium">Análise e Desenvolvimento de Sistemas (ADS)</p>
+                </div>
+            </div>
+
+            <div class="border-t border-b border-slate-800 py-3 space-y-2 text-xs text-slate-300">
+                <p><strong>Nome do Sistema:</strong> Rotas zero15</p>
+                <p><strong>Professora Orientadora:</strong> Profa. Silvia Garcia</p>
+                <p><strong>Integrantes da Equipe:</strong></p>
+                <ul class="list-disc pl-5 space-y-1 text-slate-400">
+                    <li>Anderson Roberto Munhoz de Almeida</li>
+                    <li>Luiz Henrique dos Santos</li>
+                    <li>Mateus Silioni dos Santos</li>
+                </ul>
+                <p><strong>Município em Foco:</strong> Itapetininga - SP e região (DDD 015)</p>
+                <p><strong>Objetivo:</strong> Fornecer aos ciclistas rotas seguras, mapeamento de ciclovias, visualização de POIs e sistema colaborativo de registro de ocorrências para melhoria da mobilidade urbana.</p>
+            </div>
+
+            <div class="flex justify-end">
+                <button onclick="closeModal('modal-info')" class="bg-brand-600 hover:bg-brand-500 text-slate-950 font-bold px-5 py-2 rounded-xl text-xs">
+                    Entendido
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- JAVASCRIPT LOGIC -->
+    <script>
+        // --- 1. MOCK DATA & LOCATIONS IN ITAPETININGA ---
+        const LOCATIONS = {
+            fatec: { name: 'Fatec Itapetininga', lat: -23.5888, lng: -48.0494, desc: 'Jardim Itália' },
+            chapadinha: { name: 'Parque Ecológico Chapadinha', lat: -23.5780, lng: -48.0320, desc: 'Área Verde & Pista' },
+            centro: { name: 'Praça Marechal Deodoro (Centro)', lat: -23.5905, lng: -48.0531, desc: 'Centro Comercial' },
+            marginal: { name: 'Av. Marginal Chá Preta', lat: -23.5960, lng: -48.0420, desc: 'Via de Conectividade' },
+            shopping: { name: 'Shopping Itapetininga', lat: -23.6010, lng: -48.0280, desc: 'Bairro DERSA' }
+        };
+
+        // Pre-defined POIs (Points of Interest) in Itapetininga
+        let poiList = [
+            { id: 1, type: 'oficina', name: 'Oficina Bike Center 015', lat: -23.5892, lng: -48.0510, info: 'Manutenção rápida e peças' },
+            { id: 2, type: 'agua', name: 'Ponto de Água Potável Chapadinha', lat: -23.5785, lng: -48.0325, info: 'Bebedouro público para ciclistas' },
+            { id: 3, type: 'bicicletario', name: 'Bicicletário Coberto Fatec', lat: -23.5889, lng: -48.0490, info: 'Estacionamento seguro com trava' },
+            { id: 4, type: 'oficina', name: 'Pedal Urbano Oficina', lat: -23.5910, lng: -48.0520, info: 'Bomba de ar e reparos 24h' }
+        ];
+
+        // Community reported incidents
+        let incidentsList = [
+            { id: 101, type: 'buraco', locationName: 'Av. Marginal Chá Preta', lat: -23.5940, lng: -48.0430, severity: 'Alto', desc: 'Buraco largo na margem da pista, perigo à noite.', status: 'Pendente' },
+            { id: 102, type: 'iluminacao', locationName: 'Estrada do Chapadinha', lat: -23.5820, lng: -48.0360, severity: 'Médio', desc: 'Lâmpadas queimadas nos postes do trecho inicial.', status: 'Pendente' }
+        ];
+
+        // User route ratings
+        let reviewsList = [
+            { id: 1, routeName: 'Fatec ➔ Parque Chapadinha', stars: 5, author: 'Mateus S.', comment: 'Melhor trecho da cidade, quase 100% em ciclofaixa nova!' },
+            { id: 2, routeName: 'Centro ➔ Shopping Itapetininga', stars: 3, author: 'Luiz H.', comment: 'Tráfego intenso de carros na hora do rush, requer atenção extra.' }
+        ];
+
+        // Active State Variables
+        let map;
+        let routePolylines = [];
+        let poiMarkers = [];
+        let incidentMarkers = [];
+        let activeRole = 'ciclista';
+        let currentSelectedRating = 4;
+        let isDarkMap = true;
+
+        // --- 2. MAP INITIALIZATION ---
+        window.onload = function() {
+            // Center map in Itapetininga, SP
+            map = L.map('map', {
+                zoomControl: false
+            }).setView([-23.5890, -48.0440], 14);
+
+            // Add OpenStreetMap Tile Layer
+            L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                maxZoom: 19,
+                attribution: '&copy; OpenStreetMap | Rotas zero15 Fatec'
+            }).addTo(map);
+
+            L.control.zoom({ position: 'topleft' }).addTo(map);
+
+            // Render Initial Layers & Routes
+            renderPOIMarkers();
+            renderIncidentMarkers();
+            calculateRoutes();
+            renderIncidentsFeed();
+            renderReviewsFeed();
+            renderAdminIncidentList();
+        };
+
+        // --- 3. ROUTE CALCULATION & RENDERING ENGINE ---
+        function calculateRoutes() {
+            const origKey = document.getElementById('select-origin').value;
+            const destKey = document.getElementById('select-destination').value;
+
+            // Clear previous polylines
+            routePolylines.forEach(p => map.removeLayer(p));
+            routePolylines = [];
+
+            const orig = LOCATIONS[origKey];
+            const dest = LOCATIONS[destKey];
+
+            if (origKey === destKey) {
+                document.getElementById('route-cards-container').innerHTML = `
+                    <div class="bg-amber-500/10 border border-amber-500/30 p-3 rounded-xl text-amber-300 text-xs text-center">
+                        Selecione pontos de Origem e Destino diferentes para calcular a rota.
+                    </div>`;
+                return;
+            }
+
+            // Generate 3 simulated routes with distinct characteristics
+            const routesData = [
+                {
+                    id: 'safe',
+                    title: 'Rota Mais Segura (Recomendada)',
+                    type: '100% Ciclovia & Ciclofaixa',
+                    color: '#22c55e', // Emerald
+                    safetyScore: '98%',
+                    safetyBadge: 'Excelente',
+                    safetyColor: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/30',
+                    distance: '4.8 km',
+                    time: '16 min',
+                    waypointOffset: [0.003, -0.002],
+                    desc: 'Prioriza vias separadas do tráfego veicular, passar por parques e ruas calmas.'
+                },
+                {
+                    id: 'fast',
+                    title: 'Rota Direta Expressa',
+                    type: 'Via Rápida Compartilhada',
+                    color: '#06b6d4', // Cyan
+                    safetyScore: '72%',
+                    safetyBadge: 'Atenção',
+                    safetyColor: 'text-sky-400 bg-sky-500/10 border-sky-500/30',
+                    distance: '3.9 km',
+                    time: '12 min',
+                    waypointOffset: [0.000, 0.000],
+                    desc: 'Caminho mais curto utilizando avenidas principais. Tráfego moderado de veículos.'
+                },
+                {
+                    id: 'scenic',
+                    title: 'Rota Panorâmica / Lazer',
+                    type: 'Via Secundária Arborizada',
+                    color: '#f59e0b', // Amber
+                    safetyScore: '88%',
+                    safetyBadge: 'Boa',
+                    safetyColor: 'text-amber-400 bg-amber-500/10 border-amber-500/30',
+                    distance: '5.2 km',
+                    time: '19 min',
+                    waypointOffset: [-0.002, 0.004],
+                    desc: 'Agradável para passeios no fim da tarde, passa por trechos com sombra de árvores.'
+                }
+            ];
+
+            const cardsContainer = document.getElementById('route-cards-container');
+            cardsContainer.innerHTML = '';
+
+            routesData.forEach((r, index) => {
+                // Generate path points with waypoint curve simulation
+                const wayLat = (orig.lat + dest.lat) / 2 + r.waypointOffset[0];
+                const wayLng = (orig.lng + dest.lng) / 2 + r.waypointOffset[1];
+
+                const latlngs = [
+                    [orig.lat, orig.lng],
+                    [wayLat, wayLng],
+                    [dest.lat, dest.lng]
+                ];
+
+                // Render polyline on map
+                const polyline = L.polyline(latlngs, {
+                    color: r.color,
+                    weight: index === 0 ? 6 : 4,
+                    opacity: index === 0 ? 0.9 : 0.6,
+                    dashArray: index === 1 ? '8, 8' : null
+                }).addTo(map);
+
+                polyline.bindPopup(`<b>${r.title}</b><br>${r.distance} • ${r.time}`);
+                routePolylines.push(polyline);
+
+                // Inject Card UI
+                const card = document.createElement('div');
+                card.className = `bg-slate-950 p-3.5 rounded-2xl border transition-all cursor-pointer ${index === 0 ? 'border-brand-500 shadow-lg shadow-brand-500/10' : 'border-slate-800 hover:border-slate-700'}`;
+                card.onclick = () => highlightRoute(index);
+
+                card.innerHTML = `
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="text-xs font-bold text-white flex items-center gap-1.5">
+                            <span class="w-2.5 h-2.5 rounded-full" style="background-color: ${r.color}"></span>
+                            ${r.title}
+                        </span>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-full border ${r.safetyColor}">
+                            ${r.safetyScore} Segurança
+                        </span>
+                    </div>
+                    <div class="grid grid-cols-3 gap-2 text-center my-2 bg-slate-900/90 p-2 rounded-xl text-xs">
+                        <div>
+                            <span class="text-slate-400 block text-[10px]">Distância</span>
+                            <span class="font-bold text-white">${r.distance}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 block text-[10px]">Tempo Est.</span>
+                            <span class="font-bold text-white">${r.time}</span>
+                        </div>
+                        <div>
+                            <span class="text-slate-400 block text-[10px]">Tipo de Via</span>
+                            <span class="font-semibold text-slate-300 text-[10px] truncate block">${r.type}</span>
+                        </div>
+                    </div>
+                    <p class="text-[11px] text-slate-400 mb-2">${r.desc}</p>
+                    <div class="flex justify-end gap-2">
+                        <button onclick="event.stopPropagation(); startNavigation('${r.title}')" class="bg-slate-800 hover:bg-brand-600 hover:text-slate-950 text-slate-200 text-xs font-bold px-3 py-1.5 rounded-lg transition">
+                            <i class="fa-solid fa-location-arrow mr-1"></i> Iniciar Trajeto
+                        </button>
+                    </div>
+                `;
+                cardsContainer.appendChild(card);
+            });
+
+            // Fit map bounds to encompass origin and destination
+            const bounds = L.latLngBounds([[orig.lat, orig.lng], [dest.lat, dest.lng]]);
+            map.fitBounds(bounds, { padding: [50, 50] });
+        }
+
+        function highlightRoute(activeIndex) {
+            routePolylines.forEach((poly, idx) => {
+                if (idx === activeIndex) {
+                    poly.setStyle({ weight: 7, opacity: 1 });
+                    poly.bringToFront();
+                } else {
+                    poly.setStyle({ weight: 3, opacity: 0.3 });
+                }
+            });
+        }
+
+        function startNavigation(routeName) {
+            alert(`🧭 Navegação iniciada para "${routeName}"! Mantenha a atenção ao trânsito de Itapetininga.`);
+        }
+
+        // --- 4. POI & INCIDENT MARKERS ---
+        function renderPOIMarkers() {
+            poiMarkers.forEach(m => map.removeLayer(m));
+            poiMarkers = [];
+
+            const showOficinas = document.getElementById('layer-oficinas').checked;
+            const showEstacoes = document.getElementById('layer-estacoes').checked;
+
+            poiList.forEach(poi => {
+                if ((poi.type === 'oficina' || poi.type === 'agua') && !showOficinas) return;
+                if (poi.type === 'bicicletario' && !showEstacoes) return;
+
+                let iconHtml = '🚲';
+                if (poi.type === 'oficina') iconHtml = '🛠️';
+                if (poi.type === 'agua') iconHtml = '💧';
+                if (poi.type === 'bicicletario') iconHtml = '🅿️';
+
+                const customIcon = L.divIcon({
+                    html: `<div class="bg-slate-900 border-2 border-sky-400 text-white rounded-full p-1 shadow-lg text-center w-7 h-7 flex items-center justify-center text-xs">${iconHtml}</div>`,
+                    className: '',
+                    iconSize: [28, 28]
+                });
+
+                const marker = L.marker([poi.lat, poi.lng], { icon: customIcon }).addTo(map);
+                marker.bindPopup(`
+                    <div class="text-slate-900 p-1">
+                        <strong class="text-sm font-bold block">${poi.name}</strong>
+                        <span class="text-xs text-slate-600 block">${poi.info}</span>
+                    </div>
+                `);
+                poiMarkers.push(marker);
+            });
+        }
+
+        function renderIncidentMarkers() {
+            incidentMarkers.forEach(m => map.removeLayer(m));
+            incidentMarkers = [];
+
+            const showAlertas = document.getElementById('layer-alertas').checked;
+            if (!showAlertas) return;
+
+            incidentsList.forEach(inc => {
+                const customIcon = L.divIcon({
+                    html: `<div class="bg-amber-500 border-2 border-slate-950 text-slate-950 rounded-full p-1 shadow-lg text-center w-7 h-7 flex items-center justify-center font-bold text-xs">⚠️</div>`,
+                    className: '',
+                    iconSize: [28, 28]
+                });
+
+                const marker = L.marker([inc.lat, inc.lng], { icon: customIcon }).addTo(map);
+                marker.bindPopup(`
+                    <div class="text-slate-900 p-1">
+                        <strong class="text-sm font-bold block text-rose-600">Alerta: ${inc.type.toUpperCase()}</strong>
+                        <span class="text-xs block font-semibold">${inc.locationName}</span>
+                        <p class="text-xs text-slate-600 mt-1">${inc.desc}</p>
+                    </div>
+                `);
+                incidentMarkers.push(marker);
+            });
+        }
+
+        function toggleLayers() {
+            renderPOIMarkers();
+            renderIncidentMarkers();
+        }
+
+        // --- 5. INCIDENTS & REVIEWS SUBMISSION LOGIC ---
+        function submitIncident(e) {
+            e.preventDefault();
+            const type = document.getElementById('inc-type').value;
+            const location = document.getElementById('inc-location');
+            const locationName = location.options[location.selectedIndex].text;
+            const desc = document.getElementById('inc-description').value;
+
+            const newInc = {
+                id: Date.now(),
+                type: type,
+                locationName: locationName,
+                lat: -23.5900 + (Math.random() - 0.5) * 0.02,
+                lng: -48.0450 + (Math.random() - 0.5) * 0.02,
+                severity: 'Médio',
+                desc: desc,
+                status: 'Pendente'
+            };
+
+            incidentsList.unshift(newInc);
+            renderIncidentMarkers();
+            renderIncidentsFeed();
+            renderAdminIncidentList();
+
+            document.getElementById('incident-form').reset();
+            alert('✅ Ocorrência registrada com sucesso! Ela foi adicionada ao mapa para alertar os demais ciclistas.');
+        }
+
+        function renderIncidentsFeed() {
+            const feed = document.getElementById('incidents-feed');
+            feed.innerHTML = incidentsList.map(inc => `
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs flex justify-between items-start">
+                    <div>
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="bg-amber-500/10 text-amber-400 font-bold px-1.5 py-0.5 rounded uppercase text-[10px]">
+                                ${inc.type}
+                            </span>
+                            <span class="text-slate-400 text-[10px]">${inc.locationName}</span>
+                        </div>
+                        <p class="text-slate-300">${inc.desc}</p>
+                    </div>
+                    <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-400 shrink-0 ml-2">
+                        ${inc.severity}
+                    </span>
+                </div>
+            `).join('');
+
+            document.getElementById('admin-inc-count').innerText = incidentsList.length;
+        }
+
+        function setRating(stars) {
+            currentSelectedRating = stars;
+            const container = document.getElementById('star-rating');
+            const icons = container.querySelectorAll('i');
+            icons.forEach((icon, idx) => {
+                if (idx < stars) {
+                    icon.className = 'fa-solid fa-star text-amber-400';
+                } else {
+                    icon.className = 'fa-regular fa-star text-slate-600';
+                }
+            });
+        }
+
+        function submitReview(e) {
+            e.preventDefault();
+            const routeName = document.getElementById('rev-route').value;
+            const comment = document.getElementById('rev-comment').value;
+
+            reviewsList.unshift({
+                id: Date.now(),
+                routeName: routeName,
+                stars: currentSelectedRating,
+                author: 'Ciclista Fatecano',
+                comment: comment
+            });
+
+            renderReviewsFeed();
+            document.getElementById('review-form').reset();
+            setRating(4);
+            alert('⭐ Obrigado! Sua avaliação foi registrada.');
+        }
+
+        function renderReviewsFeed() {
+            const feed = document.getElementById('reviews-feed');
+            feed.innerHTML = reviewsList.map(rev => `
+                <div class="bg-slate-950 p-3 rounded-xl border border-slate-800 text-xs">
+                    <div class="flex justify-between items-center mb-1">
+                        <span class="font-bold text-white">${rev.routeName}</span>
+                        <div class="text-amber-400 text-[10px]">
+                            ${'★'.repeat(rev.stars)}${'☆'.repeat(5 - rev.stars)}
+                        </div>
+                    </div>
+                    <p class="text-slate-300 mb-1">${rev.comment}</p>
+                    <span class="text-[10px] text-slate-500">— Por ${rev.author}</span>
+                </div>
+            `).join('');
+        }
+
+        // --- 6. ADMIN DASHBOARD ACTIONS ---
+        function adminAddPOI(e) {
+            e.preventDefault();
+            const name = document.getElementById('poi-name').value;
+            const cat = document.getElementById('poi-category').value;
+            const coordsRaw = document.getElementById('poi-coords').value.split(',');
+
+            const lat = parseFloat(coordsRaw[0]) || -23.588;
+            const lng = parseFloat(coordsRaw[1]) || -48.049;
+
+            poiList.push({
+                id: Date.now(),
+                type: cat,
+                name: name,
+                lat: lat,
+                lng: lng,
+                info: 'Cadastrado via Painel Admin Fatec'
+            });
+
+            renderPOIMarkers();
+            document.getElementById('admin-poi-form').reset();
+            alert('✅ Novo Ponto de Interesse publicado com sucesso no mapa!');
+        }
+
+        function renderAdminIncidentList() {
+            const container = document.getElementById('admin-incident-list');
+            if (!incidentsList.length) {
+                container.innerHTML = '<p class="text-slate-500 text-xs">Nenhuma ocorrência para moderar.</p>';
+                return;
+            }
+
+            container.innerHTML = incidentsList.map(inc => `
+                <div class="bg-slate-900 p-2.5 rounded-xl border border-slate-800 flex justify-between items-center text-xs">
+                    <div>
+                        <strong class="text-slate-200 block">${inc.type.toUpperCase()} - ${inc.locationName}</strong>
+                        <span class="text-[10px] text-slate-400">${inc.desc}</span>
+                    </div>
+                    <div class="flex gap-1 shrink-0">
+                        <button onclick="resolveIncident(${inc.id})" class="bg-emerald-600 hover:bg-emerald-500 text-xs text-slate-950 font-bold px-2 py-1 rounded">
+                            <i class="fa-solid fa-check"></i>
+                        </button>
+                        <button onclick="deleteIncident(${inc.id})" class="bg-rose-600 hover:bg-rose-500 text-xs text-white px-2 py-1 rounded">
+                            <i class="fa-solid fa-trash"></i>
+                        </button>
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function resolveIncident(id) {
+            incidentsList = incidentsList.filter(i => i.id !== id);
+            renderIncidentMarkers();
+            renderIncidentsFeed();
+            renderAdminIncidentList();
+            alert('Ocorrência marcada como Resolvida/Concluída!');
+        }
+
+        function deleteIncident(id) {
+            incidentsList = incidentsList.filter(i => i.id !== id);
+            renderIncidentMarkers();
+            renderIncidentsFeed();
+            renderAdminIncidentList();
+        }
+
+        // --- 7. UI CONTROLS & TAB SWITCHING ---
+        function switchTab(tabId) {
+            const views = ['planner', 'incidents', 'reviews', 'admin'];
+            views.forEach(v => {
+                const el = document.getElementById(`view-${v}`);
+                if (el) el.classList.add('hidden');
+
+                const navBtn = document.getElementById(`nav-${v}`);
+                if (navBtn) {
+                    navBtn.className = 'px-3 py-1.5 rounded-lg text-slate-400 hover:text-white transition-all flex items-center gap-2';
+                }
+            });
+
+            document.getElementById(`view-${tabId}`).classList.remove('hidden');
+            const activeBtn = document.getElementById(`nav-${tabId}`);
+            if (activeBtn) {
+                activeBtn.className = 'px-3 py-1.5 rounded-lg text-brand-400 bg-slate-800 font-semibold transition-all flex items-center gap-2';
+            }
+        }
+
+        function setRole(role) {
+            activeRole = role;
+            const btnCiclista = document.getElementById('role-ciclista');
+            const btnAdmin = document.getElementById('role-admin');
+
+            if (role === 'ciclista') {
+                btnCiclista.className = 'px-3 py-1 text-xs font-bold rounded-lg bg-brand-600 text-slate-950 shadow';
+                btnAdmin.className = 'px-3 py-1 text-xs font-bold rounded-lg text-slate-400 hover:text-white';
+                switchTab('planner');
+            } else {
+                btnAdmin.className = 'px-3 py-1 text-xs font-bold rounded-lg bg-brand-600 text-slate-950 shadow';
+                btnCiclista.className = 'px-3 py-1 text-xs font-bold rounded-lg text-slate-400 hover:text-white';
+                switchTab('admin');
+            }
+        }
+
+        function recenterMap() {
+            map.setView([-23.5890, -48.0440], 14);
+        }
+
+        function toggleMapStyle() {
+            const mapContainer = document.getElementById('map');
+            isDarkMap = !isDarkMap;
+            if (isDarkMap) {
+                mapContainer.classList.add('dark-tiles');
+            } else {
+                mapContainer.classList.remove('dark-tiles');
+            }
+        }
+
+        function openModal(id) {
+            document.getElementById(id).classList.remove('hidden');
+        }
+
+        function closeModal(id) {
+            document.getElementById(id).classList.add('hidden');
+        }
+    </script>
+</body>
+</html>
